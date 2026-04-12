@@ -1,0 +1,110 @@
+# ════════════════════════════════════
+# DriftInsights — Default Configuration
+# ════════════════════════════════════
+
+project:
+  name: "DriftInsights"
+  version: "1.0.0"
+  session_id: null  # auto-generated if null
+
+# ── Data ──────────────────────────
+data:
+  dataset: "sea"  # "sea" or "elec2"
+  sea:
+    n_samples: 20000
+    noise: 0.1
+    drift_position: 17500
+    n_features: 3
+  elec2:
+    path: "data/elec2.csv"
+    url: "https://raw.githubusercontent.com/ogozuacik/concept-drift-datasets-scikit-multiflow/master/real-world/elec.csv"
+  split:
+    train: 0.6
+    val: 0.15
+    test: 0.25
+  streaming:
+    batch_size: 1
+    label_delay: 0
+    buffer_size: 500
+    # Improvement 5: Streaming realism
+    mode: "batch"                 # "batch" (fast) or "realtime" (simulated delay)
+    inter_sample_delay: 0.0       # seconds between samples in realtime mode
+
+# ── Model ─────────────────────────
+model:
+  type: "xgboost"  # "xgboost", "lightgbm", "random_forest"
+  params:
+    xgboost:
+      n_estimators: 100
+      max_depth: 6
+      learning_rate: 0.1
+      eval_metric: "logloss"
+      random_state: 42
+    lightgbm:
+      n_estimators: 100
+      max_depth: 6
+      learning_rate: 0.1
+      random_state: 42
+      verbose: -1
+    random_forest:
+      n_estimators: 100
+      max_depth: 10
+      random_state: 42
+  save_dir: "models"
+
+# ── Drift Detection ──────────────
+drift:
+  method: "adwin"
+  adwin:
+    delta: 0.002
+  min_gap: 200          # min samples between detections
+  warmup_samples: 100   # skip initial samples
+
+# ── XAI ───────────────────────────
+xai:
+  shap:
+    max_samples: 200     # samples per window for SHAP
+    top_k_features: 5    # top features to report
+  window_size: 200       # pre/post drift window
+
+# ── Decision Engine ───────────────
+decision:
+  thresholds:
+    minor: 0.05
+    moderate: 0.15
+    severe: 0.30
+  cooldown_samples: 500  # min samples between adaptations
+
+# ── Adaptation ────────────────────
+adaptation:
+  reweight:
+    decay_factor: 0.95     # exponential decay for older samples
+  incremental:
+    window_size: 1000      # recent samples for incremental retrain
+    warm_start: true
+  full_retrain:
+    min_samples: 2000      # minimum samples for full retrain
+  validation:
+    accuracy_threshold: 0.75  # minimum accuracy to deploy
+    tolerance: 0.05            # Improvement 3: regression tolerance (allows some drop after drift)
+
+# ── Logging ───────────────────────
+logging:
+  dir: "logs"
+  level: "INFO"
+  console: true
+  file: true
+  log_metrics_every_n_samples: 100
+
+# ── API ───────────────────────────
+api:
+  host: "0.0.0.0"
+  port: 8000
+  cors_origins:
+    - "http://localhost:5173"
+    - "http://localhost:3000"
+
+# ── Database ──────────────────────
+database:
+  url: "postgresql://postgres:postgres@localhost:5432/driftinsights"
+  echo: false
