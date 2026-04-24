@@ -106,5 +106,5 @@ api:
 
 # ── Database ──────────────────────
 database:
-  url: "postgresql://postgres:postgres@localhost:5432/driftinsights"
-  echo: false
+  url: "mongodb+srv://ameymvaidya_db_user:lMQ8bcGY0AQBXzf5@cluster0.devqstn.mongodb.net/?appName=Cluster0"
+  name: "driftinsights"

@@ -1,176 +1,192 @@
 """
-DriftInsights — Database Models (SQLAlchemy + PostgreSQL)
+DriftInsights — Database Layer (MongoDB Atlas via pymongo)
 
-Defines ORM models for drift_events, model_versions, and metrics_snapshots.
+Replaces SQLAlchemy/PostgreSQL with MongoDB Atlas.
+Collections:
+  - drift_events
+  - model_versions
+  - metrics_snapshots
+  - adaptation_events
+  - xai_explanations
 """
 
+import logging
 import os
 from datetime import datetime, timezone
+from dataclasses import dataclass, field, asdict
+from typing import Optional, Any
 
-from sqlalchemy import (
-    Column, Integer, Float, String, Boolean, DateTime, JSON, Text,
-    create_engine,
+_logger = logging.getLogger("driftinsights.database")
+
+# ── Connection ───────────────────────────────────────────────────────────────
+
+_client = None
+_db = None
+
+MONGO_URI = (
+    os.environ.get("DRIFT_DATABASE_URL")
+    or "mongodb+srv://ameymvaidya_db_user:lMQ8bcGY0AQBXzf5@cluster0.devqstn.mongodb.net/?appName=Cluster0"
 )
-from sqlalchemy.orm import declarative_base, sessionmaker, Session
-
-Base = declarative_base()
+DB_NAME = "driftinsights"
 
 
-# ── ORM Models ──────────────────────────────────────────────────────────────
-
-class DriftEventRecord(Base):
-    """Persisted drift detection event."""
-    __tablename__ = "drift_events"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(String(100), index=True, nullable=False)
-    timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    sample_idx = Column(Integer, nullable=False)
-    pre_error_rate = Column(Float, nullable=False)
-    post_error_rate = Column(Float, nullable=False)
-    severity_estimate = Column(Float, default=0.0)
-    adwin_width = Column(Integer, default=0)
-    detection_count = Column(Integer, default=0)
-    explanation = Column(JSON, nullable=True)  # SHAP explanation data
+def get_db():
+    """Return the MongoDB database handle, creating the client if needed."""
+    global _client, _db
+    if _db is None:
+        from pymongo import MongoClient
+        from pymongo.server_api import ServerApi
+        _client = MongoClient(MONGO_URI, server_api=ServerApi("1"))
+        _db = _client[DB_NAME]
+        _logger.info(f"Connected to MongoDB Atlas — database: {DB_NAME}")
+    return _db
 
 
-class ModelVersionRecord(Base):
-    """Persisted model version metadata."""
-    __tablename__ = "model_versions"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(String(100), index=True, nullable=False)
-    version = Column(Integer, nullable=False)
-    model_type = Column(String(50), nullable=False)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    accuracy = Column(Float, nullable=True)
-    f1_score = Column(Float, nullable=True)
-    roc_auc = Column(Float, nullable=True)
-    n_training_samples = Column(Integer, nullable=True)
-    file_path = Column(String(500), nullable=True)
-    is_active = Column(Boolean, default=True)
-    adaptation_strategy = Column(String(50), nullable=True)
-    metadata_ = Column("metadata", JSON, nullable=True)
+def ping():
+    """Ping the deployment to confirm connection."""
+    db = get_db()
+    db.command("ping")
 
 
-class MetricsSnapshotRecord(Base):
-    """Persisted metrics snapshot."""
-    __tablename__ = "metrics_snapshots"
+# ── Document dataclasses (replace SQLAlchemy ORM models) ────────────────────
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(String(100), index=True, nullable=False)
-    timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    sample_idx = Column(Integer, nullable=False)
-    running_accuracy = Column(Float, nullable=False)
-    running_error = Column(Float, nullable=False)
-    windowed_accuracy = Column(Float, nullable=True)
-    windowed_error = Column(Float, nullable=True)
-    window_size = Column(Integer, nullable=True)
+@dataclass
+class DriftEventRecord:
+    session_id: str
+    sample_idx: int
+    pre_error_rate: float
+    post_error_rate: float
+    severity_estimate: float = 0.0
+    adwin_width: int = 0
+    detection_count: int = 0
+    explanation: Optional[Any] = None
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
-
-class AdaptationRecord(Base):
-    """Persisted adaptation event."""
-    __tablename__ = "adaptation_events"
-
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(String(100), index=True, nullable=False)
-    timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    strategy = Column(String(50), nullable=False)
-    severity = Column(String(50), nullable=True)
-    success = Column(Boolean, nullable=False)
-    old_accuracy = Column(Float, nullable=True)
-    new_accuracy = Column(Float, nullable=True)
-    threshold = Column(Float, nullable=True)
-    n_samples_used = Column(Integer, nullable=True)
-    duration_seconds = Column(Float, nullable=True)
-    model_version = Column(Integer, nullable=True)
-    reason = Column(Text, nullable=True)
-    rollback = Column(Boolean, default=False)
+    def to_doc(self) -> dict:
+        return asdict(self)
 
 
-class XAIRecord(Base):
-    """Persisted XAI explanation linked to a drift event."""
-    __tablename__ = "xai_explanations"
+@dataclass
+class ModelVersionRecord:
+    session_id: str
+    version: int
+    model_type: str
+    accuracy: Optional[float] = None
+    f1_score: Optional[float] = None
+    roc_auc: Optional[float] = None
+    n_training_samples: Optional[int] = None
+    file_path: Optional[str] = None
+    is_active: bool = True
+    adaptation_strategy: Optional[str] = None
+    metadata_: Optional[Any] = None
+    created_at: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
 
-    id = Column(Integer, primary_key=True, autoincrement=True)
-    session_id = Column(String(100), index=True, nullable=False)
-    drift_event_id = Column(Integer, nullable=True)  # FK to drift_events.id
-    timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
-    delta_e_total = Column(Float, nullable=True)
-    direction = Column(String(20), nullable=True)
-    top_feature = Column(String(100), nullable=True)
-    top_delta_e = Column(Float, nullable=True)
-    explanation_json = Column(JSON, nullable=True)
-
-
-# ── Database Engine / Session ───────────────────────────────────────────────
-
-_engine = None
-_SessionLocal = None
-
-
-def get_engine(database_url: str | None = None, echo: bool = False):
-    """Get or create the SQLAlchemy engine."""
-    global _engine
-    if _engine is None:
-        url = database_url or os.environ.get(
-            "DRIFT_DATABASE_URL",
-            "postgresql://postgres:postgres@localhost:5432/driftinsights"
-        )
-        _engine = create_engine(url, echo=echo, pool_pre_ping=True)
-    return _engine
+    def to_doc(self) -> dict:
+        d = asdict(self)
+        # rename metadata_ -> metadata for Mongo
+        d["metadata"] = d.pop("metadata_", None)
+        return d
 
 
-def get_session_factory(database_url: str | None = None) -> sessionmaker:
-    """Get a session factory."""
-    global _SessionLocal
-    if _SessionLocal is None:
-        engine = get_engine(database_url)
-        _SessionLocal = sessionmaker(bind=engine, autoflush=False, expire_on_commit=False)
-    return _SessionLocal
+@dataclass
+class MetricsSnapshotRecord:
+    session_id: str
+    sample_idx: int
+    running_accuracy: float
+    running_error: float
+    windowed_accuracy: Optional[float] = None
+    windowed_error: Optional[float] = None
+    window_size: Optional[int] = None
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_doc(self) -> dict:
+        return asdict(self)
 
 
-def get_db_session(database_url: str | None = None) -> Session:
-    """Get a new database session."""
-    factory = get_session_factory(database_url)
-    return factory()
+@dataclass
+class AdaptationRecord:
+    session_id: str
+    strategy: str
+    success: bool
+    old_accuracy: Optional[float] = None
+    new_accuracy: Optional[float] = None
+    threshold: Optional[float] = None
+    n_samples_used: Optional[int] = None
+    duration_seconds: Optional[float] = None
+    model_version: Optional[int] = None
+    reason: Optional[str] = None
+    rollback: bool = False
+    severity: Optional[str] = None
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_doc(self) -> dict:
+        return asdict(self)
 
 
-def init_db(database_url: str | None = None, echo: bool = False) -> None:
-    """Create all database tables."""
-    engine = get_engine(database_url, echo=echo)
-    Base.metadata.create_all(bind=engine)
+@dataclass
+class XAIRecord:
+    session_id: str
+    drift_event_id: Optional[int] = None
+    delta_e_total: Optional[float] = None
+    direction: Optional[str] = None
+    top_feature: Optional[str] = None
+    top_delta_e: Optional[float] = None
+    explanation_json: Optional[Any] = None
+    timestamp: str = field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
+
+    def to_doc(self) -> dict:
+        return asdict(self)
 
 
-def reset_engine():
-    """Reset the global engine (for testing)."""
-    global _engine, _SessionLocal
-    if _engine:
-        _engine.dispose()
-    _engine = None
-    _SessionLocal = None
+# ── Collection name map ──────────────────────────────────────────────────────
+
+_COLLECTION_MAP = {
+    DriftEventRecord:      "drift_events",
+    ModelVersionRecord:    "model_versions",
+    MetricsSnapshotRecord: "metrics_snapshots",
+    AdaptationRecord:      "adaptation_events",
+    XAIRecord:             "xai_explanations",
+}
 
 
-# ── Safe Write Helper ───────────────────────────────────────────────────────
-
-import logging as _logging
-_db_logger = _logging.getLogger("driftinsights.database")
-
+# ── Safe Write Helper ────────────────────────────────────────────────────────
 
 def db_write(record) -> None:
     """
-    Safely write a single ORM record to the database.
+    Safely insert a single record into the appropriate MongoDB collection.
     Logs a warning on failure but never raises — pipeline speed is the priority.
     """
     try:
-        session = get_db_session()
-        try:
-            session.add(record)
-            session.commit()
-        except Exception as e:
-            session.rollback()
-            _db_logger.warning(f"DB write failed (non-critical): {e}")
-        finally:
-            session.close()
+        collection_name = _COLLECTION_MAP.get(type(record))
+        if collection_name is None:
+            _logger.warning(f"Unknown record type: {type(record)}")
+            return
+        db = get_db()
+        doc = record.to_doc()
+        db[collection_name].insert_one(doc)
     except Exception as e:
-        _db_logger.warning(f"DB session creation failed (non-critical): {e}")
+        _logger.warning(f"MongoDB write failed (non-critical): {e}")
+
+
+# ── Compatibility stubs (keep pipeline.py import working) ───────────────────
+# pipeline.py imports: db_write, DriftEventRecord, MetricsSnapshotRecord,
+#                      AdaptationRecord as AdaptationRecordDB, XAIRecord
+# All are defined above — nothing extra needed.
+
+
+def init_db(*args, **kwargs) -> None:
+    """No-op: MongoDB creates collections automatically on first insert."""
+    try:
+        ping()
+        _logger.info("MongoDB Atlas connection verified.")
+    except Exception as e:
+        _logger.warning(f"MongoDB ping failed: {e}")
+
+
+def reset_engine():
+    """Close and reset the MongoDB client."""
+    global _client, _db
+    if _client:
+        _client.close()
+    _client = None
+    _db = None

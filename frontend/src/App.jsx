@@ -46,7 +46,8 @@ function AppShell() {
         </RequireAuth>
       }>
         {/* User routes */}
-        <Route index element={<Dashboard />} />
+        <Route index element={<Navigate to="/dashboard" replace />} />
+        <Route path="/dashboard"     element={<Dashboard />} />
         <Route path="/stream"        element={<LiveStream />} />
         <Route path="/drift"         element={<DriftAnalytics />} />
         <Route path="/explainability"element={<Explainability />} />
@@ -64,7 +65,7 @@ function AppShell() {
       </Route>
 
       {/* Catch-all */}
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<Navigate to="/dashboard" replace />} />
     </Routes>
   )
 }
