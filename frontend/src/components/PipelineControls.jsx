@@ -9,7 +9,7 @@ export default function PipelineControls({ onRefresh, status }) {
     setLoading(true)
     setMessage('')
     try {
-      const result = await startPipeline({ dataset: 'sea', model_type: 'xgboost' })
+      const result = await startPipeline({ dataset: 'elec2', model_type: 'xgboost' })
       setMessage(`Pipeline started: ${result.task_id}`)
     } catch (e) {
       setMessage(`Error: ${e.response?.data?.detail || e.message}`)

@@ -15,6 +15,7 @@ import DriftAnalytics from './pages/DriftAnalytics'
 import Explainability from './pages/Explainability'
 import Models         from './pages/Models'
 import Pipeline       from './pages/Pipeline'
+import InputMode      from './pages/InputMode'
 
 // Admin pages
 import AdminOverview     from './pages/admin/AdminOverview'
@@ -53,6 +54,7 @@ function AppShell() {
         <Route path="/explainability"element={<Explainability />} />
         <Route path="/models"        element={<Models />} />
         <Route path="/pipeline"      element={<Pipeline />} />
+        <Route path="/input"         element={<InputMode />} />
 
         {/* Admin routes — require admin role */}
         <Route path="/admin" element={<RequireAdmin><AdminOverview /></RequireAdmin>} />

@@ -104,6 +104,9 @@ class Pipeline:
         if self._ws_manager is None:
             return
         try:
+            if hasattr(self._ws_manager, "broadcast_from_thread"):
+                self._ws_manager.broadcast_from_thread(event_type, data)
+                return
             loop = asyncio.get_event_loop()
             if loop.is_running():
                 asyncio.run_coroutine_threadsafe(
@@ -237,6 +240,17 @@ class Pipeline:
         Returns:
             Summary dict with final metrics and drift events
         """
+        # ── Reset all streaming state before each run ──────────────────────
+        # Without this, a second call accumulates on top of the first run,
+        # causing metrics (accuracy, sample count) to blend across datasets.
+        self._stream_buffer_X = []
+        self._stream_buffer_y = []
+        self._drift_events = []
+        if self.metrics is not None:
+            self.metrics.reset()
+        if self.drift_detector is not None:
+            self.drift_detector.reset()
+
         self.event_logger.set_phase("streaming")
         logger.info(
             f"Starting streaming loop — {len(self._X_test)} test samples"
@@ -469,15 +483,17 @@ class Pipeline:
         buffer_X = np.array(self._stream_buffer_X)
         n = len(buffer_X)
 
-        if n < window_size * 2:
+        min_needed = 40
+        if n < min_needed:
             logger.warning(
-                f"Insufficient data for XAI: {n} < {window_size * 2} samples"
+                f"Insufficient data for XAI: {n} < {min_needed} samples"
             )
             return None
+        half = max(20, min(window_size, n // 2))
 
         try:
-            X_pre = buffer_X[-(window_size * 2):-window_size]
-            X_post = buffer_X[-window_size:]
+            X_pre = buffer_X[-(half * 2):-half]
+            X_post = buffer_X[-half:]
 
             explanation = self.xai_engine.explain_drift(
                 X_pre, X_post, self._feature_names
@@ -537,17 +553,33 @@ class Pipeline:
 
         self.decision_engine.begin_adaptation()
 
-        # Prepare data for adaptation
+        # Prepare data for adaptation. Validate on a recent stream holdout so
+        # post-drift models are not scored against stale pre-drift X_val.
         buffer_X = np.array(self._stream_buffer_X)
         buffer_y = np.array(self._stream_buffer_y)
+        holdout_n = min(80, max(20, len(buffer_y) // 5)) if len(buffer_y) >= 40 else 0
+        if holdout_n > 0:
+            X_val_live, y_val_live = buffer_X[-holdout_n:], buffer_y[-holdout_n:]
+            X_adapt, y_adapt = buffer_X[:-holdout_n], buffer_y[:-holdout_n]
+        else:
+            X_val_live, y_val_live = self._X_val, self._y_val
+            X_adapt, y_adapt = buffer_X, buffer_y
+
+        if (
+            command.strategy == AdaptationStrategy.FULL_RETRAIN
+            and self._X_train is not None
+            and len(X_adapt) > 0
+        ):
+            X_adapt = np.vstack([self._X_train, X_adapt])
+            y_adapt = np.concatenate([self._y_train, y_adapt])
 
         result = self.adaptation_module.execute(
             command=command,
             model=self.model,
-            X_recent=buffer_X,
-            y_recent=buffer_y,
-            X_val=self._X_val,
-            y_val=self._y_val,
+            X_recent=X_adapt,
+            y_recent=y_adapt,
+            X_val=X_val_live,
+            y_val=y_val_live,
             feature_names=self._feature_names,
         )
 

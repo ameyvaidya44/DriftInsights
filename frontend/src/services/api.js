@@ -64,7 +64,15 @@ export const severityColor = (severity) => ({
   none: '#555570',
 }[severity] || '#555570')
 
-// ── Admin API stubs (ready for backend integration) ────────────────────────
+// ── Input Mode endpoints ───────────────────────────────────────────────────
+
+export const fetchInputDatasets   = () => api.get('/input/datasets').then(r => r.data)
+export const startRepositoryMode  = (params) => api.post('/input/repository', null, { params }).then(r => r.data)
+export const startUploadMode      = (formData) => api.post('/input/upload', formData, {
+  headers: { 'Content-Type': 'multipart/form-data' },
+  timeout: 60000,
+}).then(r => r.data)
+export const fetchUploadStatus    = () => api.get('/input/upload/status').then(r => r.data)
 
 // Users
 export const fetchUsers        = () => api.get('/admin/users').then(r => r.data).catch(() => ({ users: [] }))

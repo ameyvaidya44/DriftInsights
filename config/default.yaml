@@ -9,7 +9,7 @@ project:
 
 # ── Data ──────────────────────────
 data:
-  dataset: "sea"  # "sea" or "elec2"
+  dataset: "elec2"  # "sea" or "elec2"
   sea:
     n_samples: 20000
     noise: 0.1
@@ -83,9 +83,9 @@ adaptation:
     window_size: 1000      # recent samples for incremental retrain
     warm_start: true
   full_retrain:
-    min_samples: 2000      # minimum samples for full retrain
+    min_samples: 200       # minimum samples for full retrain
   validation:
-    accuracy_threshold: 0.75  # minimum accuracy to deploy
+    accuracy_threshold: 0.60  # minimum accuracy to deploy
     tolerance: 0.05            # Improvement 3: regression tolerance (allows some drop after drift)
 
 # ── Logging ───────────────────────
@@ -106,5 +106,5 @@ api:
 
 # ── Database ──────────────────────
 database:
-  url: "mongodb+srv://ameymvaidya_db_user:lMQ8bcGY0AQBXzf5@cluster0.devqstn.mongodb.net/?appName=Cluster0"
+  url: "${MONGODB_URI}"  # set MONGODB_URI in your .env file
   name: "driftinsights"

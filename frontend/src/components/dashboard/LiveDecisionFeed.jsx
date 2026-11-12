@@ -1,50 +1,45 @@
-import { useState, useEffect, useRef } from 'react'
+import { useMemo } from 'react'
 import useWebSocket from '../../hooks/useWebSocket'
-import { classifySeverity, severityColor } from '../../services/api'
+import useFetch from '../../hooks/useFetch'
+import { classifySeverity, severityColor, fetchModelHistory, fetchXaiHistory } from '../../services/api'
 import { formatNumber } from '../../utils/formatters'
 
-const MATCH_WINDOW_MS = 2000
+function mapHistoryToFeed(history, explanations) {
+  const xai = explanations || []
+  return (history || []).slice().reverse().slice(0, 20).map((h, i) => {
+    const matched = xai[xai.length - 1 - i] || {}
+    const deltaE = matched.delta_e_total ?? 0
+    return {
+      id: `${h.timestamp || i}-${h.model_version || i}`,
+      deltaE,
+      severity: classifySeverity(deltaE),
+      strategy: h.strategy,
+      result: h.success ? 'deployed' : 'rejected',
+      success: Boolean(h.success),
+      topFeature: matched.top_features?.[0]?.feature || null,
+      timestamp: h.timestamp || new Date().toISOString(),
+    }
+  })
+}
 
 export default function LiveDecisionFeed() {
-  const [feed, setFeed] = useState([])
-  const pendingXaiRef = useRef(null)
-  const { subscribe } = useWebSocket()
+  const { connected } = useWebSocket()
+  const { data: histData } = useFetch(fetchModelHistory, { refreshInterval: 2000 })
+  const { data: xaiData } = useFetch(fetchXaiHistory, { refreshInterval: 2000 })
 
-  useEffect(() => {
-    const unsubs = [
-      subscribe('xai_complete', (data) => {
-        pendingXaiRef.current = { data, arrivedAt: Date.now() }
-      }),
-      subscribe('adaptation_complete', (adaptData) => {
-        const pending = pendingXaiRef.current
-        const xaiData = pending && (Date.now() - pending.arrivedAt) < MATCH_WINDOW_MS
-          ? pending.data
-          : null
-        if (xaiData) pendingXaiRef.current = null
-
-        const deltaE = xaiData?.delta_e_total ?? 0
-        const severity = classifySeverity(deltaE)
-
-        setFeed(prev => [{
-          id: Date.now(),
-          deltaE,
-          severity,
-          strategy: adaptData.strategy,
-          result: adaptData.result,
-          success: adaptData.result === 'deployed',
-          topFeature: xaiData?.top_feature || null,
-          timestamp: adaptData.timestamp || new Date().toISOString(),
-        }, ...prev].slice(0, 20))
-      }),
-    ]
-    return () => unsubs.forEach(u => u())
-  }, [subscribe])
+  const feed = useMemo(
+    () => mapHistoryToFeed(histData?.history, xaiData?.explanations),
+    [histData, xaiData],
+  )
 
   if (feed.length === 0) {
     return (
       <div className="di-card">
         <h3 className="di-card-title">Live Decision Feed</h3>
-        <div className="di-empty">No adaptation decisions yet. Decisions will appear after drift is detected.</div>
+        <div className="di-empty">
+          No adaptation decisions yet. Start the pipeline; decisions appear after ADWIN detects drift.
+          {!connected && <div className="text-muted" style={{ marginTop: 8 }}>WebSocket disconnected — feed still updates from the API.</div>}
+        </div>
       </div>
     )
   }

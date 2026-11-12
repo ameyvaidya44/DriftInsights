@@ -64,7 +64,11 @@ class DataHandler:
         n_samples = cfg.n_samples
         noise = cfg.noise
         drift_pos = cfg.drift_position
-        rng = np.random.RandomState(42)
+        # Use a fixed seed so the dataset is reproducible across restarts,
+        # but derive it from n_samples+drift_pos so different configs produce
+        # genuinely different data rather than always the same 20k rows.
+        seed = int(n_samples) ^ int(drift_pos) ^ 42
+        rng = np.random.RandomState(seed)
 
         # Generate 3 features uniformly in [0, 10]
         X = rng.uniform(0, 10, size=(n_samples, 3))
