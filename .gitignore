@@ -43,3 +43,7 @@ frontend/.env
 # Database
 *.db
 *.sqlite3
+
+# Runtime-generated / internal audit files
+logs/audit.json
+SYSTEM_IMPLEMENTATION_AUDIT.md

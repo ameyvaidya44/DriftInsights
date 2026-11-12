@@ -26,6 +26,7 @@ from api.websocket import manager
 from api.tasks import task_manager
 from api.routes import predict, drift, models, metrics
 from api.routes import xai
+from api.routes import input_modes
 
 logger = logging.getLogger("driftinsights.api")
 
@@ -54,6 +55,7 @@ def set_pipeline(pipeline):
 async def lifespan(app: FastAPI):
     """Manage application startup and shutdown."""
     logger.info("DriftInsights API starting up...")
+    manager.attach_loop(asyncio.get_running_loop())
 
     # Try to initialize pipeline with default config
     try:
@@ -104,6 +106,7 @@ app.include_router(drift.router)
 app.include_router(models.router)
 app.include_router(metrics.router)
 app.include_router(xai.router)
+app.include_router(input_modes.router)
 
 
 # ── Core Endpoints ──────────────────────────────────────────────────────────
@@ -208,8 +211,7 @@ async def start_pipeline(dataset: str = "sea", model_type: str = "xgboost", max_
     def run_stream():
         try:
             summary = pipeline.run_stream(max_samples=max_samples)
-            # Broadcast completion
-            asyncio.run(manager.broadcast("pipeline_complete", summary))
+            manager.broadcast_from_thread("pipeline_complete", summary)
         except Exception as e:
             logger.error(f"Pipeline streaming error: {e}")
 

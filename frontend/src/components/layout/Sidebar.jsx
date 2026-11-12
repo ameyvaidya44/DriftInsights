@@ -8,6 +8,7 @@ const userNav = [
   { path: '/explainability',label: 'Explainability', icon: '◉' },
   { path: '/models',        label: 'Models',         icon: '◈' },
   { path: '/pipeline',      label: 'Pipeline',       icon: '⚙' },
+  { path: '/input',         label: 'Input Mode',     icon: '⬆' },
 ]
 
 const adminNav = [

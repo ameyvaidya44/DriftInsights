@@ -1,5 +1,4 @@
-import { useState } from 'react'
-import { fetchStatus, fetchHealth, fetchModelHistory, fetchFsmStatus, startPipeline } from '../services/api'
+import { fetchStatus, fetchHealth, fetchModelHistory, fetchFsmStatus } from '../services/api'
 import useFetch from '../hooks/useFetch'
 
 const CONFIG = {
@@ -12,16 +11,10 @@ const CONFIG = {
 }
 
 export default function Pipeline() {
-  const [starting, setStarting] = useState(false)
-
   const { data: status, refetch: refetchStatus } = useFetch(fetchStatus, { refreshInterval: 5000 })
   const { data: health } = useFetch(fetchHealth, { refreshInterval: 10000 })
   const { data: modelHistData } = useFetch(fetchModelHistory, { refreshInterval: 5000 })
   const { data: fsm } = useFetch(fetchFsmStatus, { refreshInterval: 5000 })
-
-  const histMeta = { total: modelHistData?.total || 0, successful: modelHistData?.successful || 0 }
-  const fsmState = fsm?.state || status?.fsm_state || 'idle'
-  const fsmColors = { idle: '#22c55e', adapting: '#f97316', cooldown: '#eab308' }
 
   const handleStart = async () => {
     setStarting(true)

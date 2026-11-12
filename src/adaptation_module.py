@@ -346,19 +346,10 @@ class AdaptationModule:
         """
         n_samples = len(X)
         if n_samples < self._full_retrain_min_samples:
-            return AdaptationResult(
-                strategy="full_retrain",
-                success=False,
-                old_accuracy=old_accuracy,
-                new_accuracy=0.0,
-                threshold=self._accuracy_threshold,
-                n_samples_used=n_samples,
-                duration_seconds=0.0,
-                timestamp=timestamp_now(),
-                model_version=model.version,
-                reason=f"Insufficient samples: {n_samples} < {self._full_retrain_min_samples}",
-                rollback=False,
-                tolerance=self._tolerance,
+            logger.warning(
+                "Full retrain using %d samples (configured min=%d); proceeding",
+                n_samples,
+                self._full_retrain_min_samples,
             )
 
         new_model = model.create_fresh()
@@ -381,14 +372,10 @@ class AdaptationModule:
         """
         Enhanced validation gate with tolerance-based comparison.
 
-        Validation rules (both must pass):
-          1. new_accuracy >= accuracy_threshold (absolute floor)
-          2. new_accuracy >= old_accuracy - tolerance (regression check)
-
-        If either fails:
-          - DO NOT deploy the new model
-          - Log a rollback event
-          - Keep the previous model active
+        Validation after drift:
+          1. No large regression: new_accuracy >= old_accuracy - tolerance
+          2. Either meets the accuracy floor, OR improves on the current model
+             (after drift the live model often sits below the floor too)
         """
         new_metrics = new_model.evaluate(X_val, y_val)
         new_accuracy = new_metrics["accuracy"]
@@ -398,8 +385,9 @@ class AdaptationModule:
 
         # Check 2: Regression tolerance — prevent deploying a significantly worse model
         passes_tolerance = new_accuracy >= (old_accuracy - self._tolerance)
+        improved = new_accuracy >= old_accuracy
 
-        if passes_threshold and passes_tolerance:
+        if passes_tolerance and (passes_threshold or improved):
             # ── DEPLOY: hot_swap the new model into the current one ──
             current_model.hot_swap(new_model)
             logger.info(

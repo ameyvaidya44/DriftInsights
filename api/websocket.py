@@ -29,6 +29,21 @@ class ConnectionManager:
     def __init__(self):
         self._active_connections: list[WebSocket] = []
         self._lock = asyncio.Lock()
+        self._loop: asyncio.AbstractEventLoop | None = None
+
+    def attach_loop(self, loop: asyncio.AbstractEventLoop) -> None:
+        """Store the FastAPI event loop so worker threads can broadcast safely."""
+        self._loop = loop
+
+    def broadcast_from_thread(self, event_type: str, data: dict[str, Any]) -> None:
+        """Schedule a broadcast from a background pipeline thread."""
+        if self._loop is None or not self._loop.is_running():
+            logger.debug("Skipping WS broadcast — event loop not attached")
+            return
+        try:
+            asyncio.run_coroutine_threadsafe(self.broadcast(event_type, data), self._loop)
+        except Exception as exc:
+            logger.debug(f"Threadsafe broadcast failed: {exc}")
 
     async def connect(self, websocket: WebSocket) -> None:
         """Accept and register a new WebSocket connection."""
